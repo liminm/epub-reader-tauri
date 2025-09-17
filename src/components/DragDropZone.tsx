@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ePub from "epubjs";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { readFile } from "@tauri-apps/plugin-fs";
 import { Book } from "../App";
 
 interface DragDropZoneProps {
@@ -11,8 +11,7 @@ interface DragDropZoneProps {
 
 export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
     const [isDragging, setIsDragging] = useState(false);
-    const [processing, setProcessing] = useState(false);
-
+    const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     // Handle file drop from OS
@@ -30,32 +29,31 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
     }, []);
 
     const handleFiles = async (paths: string[]) => {
-        setProcessing(true);
         setError(null);
         for (const path of paths) {
             if (!path.toLowerCase().endsWith(".epub")) continue;
 
             try {
-                console.log("Processing file:", path);
+                const fileName = path.split(/[/\\]/).pop();
+                setStatus(`Processing ${fileName}...`);
+
                 // 1. Calculate Hash
+                setStatus(`Hashing ${fileName}...`);
                 const hash = await invoke<string>("calculate_book_hash", { filePath: path });
-                console.log("Hash calculated:", hash);
 
                 // 2. Parse Metadata
-                const url = convertFileSrc(path);
-                console.log("File URL:", url);
+                setStatus(`Reading metadata for ${fileName}...`);
 
-                const book = ePub(url);
+                // Read file as ArrayBuffer to avoid asset protocol issues
+                const fileBytes = await readFile(path);
+                const book = ePub(fileBytes.buffer);
+
                 await book.ready;
-                console.log("Book ready");
-
                 const metadata = await book.loaded.metadata;
-                console.log("Metadata loaded:", metadata);
-
                 const coverUrl = await book.coverUrl();
-                console.log("Cover URL:", coverUrl);
 
                 // 3. Create Book Object
+                setStatus(`Adding ${fileName} to library...`);
                 const newBook: Book = {
                     hash,
                     title: metadata.title,
@@ -71,7 +69,7 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
                 setError(`Failed to process ${path}: ${e.message || e}`);
             }
         }
-        setProcessing(false);
+        setStatus(null);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -87,8 +85,6 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
         e.preventDefault();
         setIsDragging(false);
         // This handles browser-internal drops, but for OS drops we rely on tauri://drag-drop
-        // However, if the user drags from OS to the window, the browser might also fire drop events if not prevented.
-        // The tauri://drag-drop event is more reliable for OS files.
     };
 
     return (
@@ -99,8 +95,11 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
         >
-            {processing ? (
-                <p className="text-lg">Processing books...</p>
+            {status ? (
+                <div className="flex flex-col items-center justify-center space-y-3">
+                    <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-lg animate-pulse">{status}</p>
+                </div>
             ) : (
                 <div>
                     <p className="text-xl font-medium mb-2">Drag & Drop ePub files here</p>
@@ -115,5 +114,3 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
         </div>
     );
 }
-
-import { useEffect } from "react";

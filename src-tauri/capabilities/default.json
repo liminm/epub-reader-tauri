@@ -9,6 +9,14 @@
     "core:default",
     "opener:default",
     "fs:default",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    },
     "dialog:default"
   ]
 }

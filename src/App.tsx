@@ -1,15 +1,17 @@
 import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { DragDropZone } from "./components/DragDropZone";
 import { Library } from "./components/Library";
 import { Reader } from "./components/Reader";
-import { DragDropZone } from "./components/DragDropZone";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 export interface Book {
-  hash: string;
   title: string;
-  author: string;
-  coverUrl?: string;
   path: string;
-  addedAt: number;
+  cover?: string;
+  lastRead?: string;
+  progress?: number;
+  hash: string;
 }
 
 function App() {
@@ -17,32 +19,41 @@ function App() {
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("omni-books");
-    if (stored) {
-      setBooks(JSON.parse(stored));
+    const saved = localStorage.getItem("books");
+    if (saved) {
+      setBooks(JSON.parse(saved));
     }
   }, []);
 
-  const saveBooks = (newBooks: Book[]) => {
+  const handleAddBook = (book: Book) => {
+    const newBooks = [...books, book];
     setBooks(newBooks);
-    localStorage.setItem("omni-books", JSON.stringify(newBooks));
+    localStorage.setItem("books", JSON.stringify(newBooks));
   };
 
-  const handleAddBook = (book: Book) => {
-    if (books.some((b) => b.hash === book.hash)) {
-      console.log("Book already exists");
-      return;
-    }
-    saveBooks([...books, book]);
+  const clearLibrary = () => {
+    localStorage.removeItem("books");
+    setBooks([]);
+    setCurrentBook(null);
   };
 
   return (
     <div className="h-screen w-screen bg-gray-900 text-white overflow-hidden">
       {currentBook ? (
-        <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
+        <ErrorBoundary>
+          <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
+        </ErrorBoundary>
       ) : (
         <div className="p-8 h-full flex flex-col">
-          <h1 className="text-3xl font-bold mb-6">OmniRead Library</h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold">OmniRead Library</h1>
+            <button
+              onClick={clearLibrary}
+              className="text-xs text-red-400 hover:text-red-300 underline"
+            >
+              Clear Library
+            </button>
+          </div>
           <DragDropZone onBookAdded={handleAddBook} />
           <Library books={books} onOpen={setCurrentBook} />
         </div>
