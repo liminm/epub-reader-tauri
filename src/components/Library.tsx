@@ -1,4 +1,4 @@
-import { Book } from "../App";
+import { Book } from "../types";
 
 interface LibraryProps {
     books: Book[];

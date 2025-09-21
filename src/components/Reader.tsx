@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ePub, { Book as EpubBook, Rendition } from "epubjs";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Book } from "../App";
+import { Book } from "../types";
 
 interface ReaderProps {
     book: Book;

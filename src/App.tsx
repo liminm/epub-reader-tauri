@@ -1,41 +1,36 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { DragDropZone } from "./components/DragDropZone";
 import { Library } from "./components/Library";
 import { Reader } from "./components/Reader";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-
-export interface Book {
-  title: string;
-  author?: string;
-  path: string;
-  cover?: string;
-  coverUrl?: string;
-  lastRead?: string;
-  progress?: number;
-  hash: string;
-  addedAt?: number;
-}
+import { storage } from "./utils/storage";
+import { Book } from "./types";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("books");
-    if (saved) {
-      setBooks(JSON.parse(saved));
-    }
+    const loadBooks = async () => {
+      const savedBooks = await storage.getBooks();
+      setBooks(savedBooks);
+    };
+    loadBooks();
   }, []);
 
-  const handleAddBook = (book: Book) => {
-    const newBooks = [...books, book];
-    setBooks(newBooks);
-    localStorage.setItem("books", JSON.stringify(newBooks));
+  const handleAddBook = async (book: Book) => {
+    setBooks((prevBooks) => {
+      const newBooks = [...prevBooks, book];
+      // Side effect: save to storage. 
+      // Note: In a stricter React setup, we might use a useEffect for this, 
+      // but this ensures we save exactly what we set.
+      storage.saveBooks(newBooks);
+      return newBooks;
+    });
   };
 
-  const clearLibrary = () => {
-    localStorage.removeItem("books");
+  const clearLibrary = async () => {
+    await storage.clearBooks();
     setBooks([]);
     setCurrentBook(null);
   };
