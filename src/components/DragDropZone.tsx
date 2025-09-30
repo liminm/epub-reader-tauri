@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import ePub from "epubjs";
-import { readFile } from "@tauri-apps/plugin-fs";
+// import ePub from "epubjs";
+// import { readFile } from "@tauri-apps/plugin-fs";
 import { Book } from "../types";
 
 interface DragDropZoneProps {
@@ -48,40 +48,24 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
                 setStatus(`Hashing ${fileName}...`);
                 const hash = await invoke<string>("calculate_book_hash", { filePath: path });
 
-                // 2. Parse Metadata
+                // 2. Parse Metadata via Rust
                 setStatus(`Reading metadata for ${fileName}...`);
 
-                // Read file as ArrayBuffer to avoid asset protocol issues
-                const fileBytes = await readFile(path);
-                const book = ePub(fileBytes.buffer);
-
-                await book.ready;
-                const metadata = await book.loaded.metadata;
-
-                // Get cover and convert to base64
-                let coverUrl: string | undefined;
-                try {
-                    const coverUrlBlob = await book.coverUrl();
-                    if (coverUrlBlob) {
-                        const response = await fetch(coverUrlBlob);
-                        const blob = await response.blob();
-                        coverUrl = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result as string);
-                            reader.readAsDataURL(blob);
-                        });
-                    }
-                } catch (e) {
-                    console.warn("Failed to load cover:", e);
+                interface RustMetadata {
+                    title?: string;
+                    creator?: string;
+                    cover_base64?: string;
                 }
+
+                const metadata = await invoke<RustMetadata>("parse_epub_metadata", { filePath: path });
 
                 // 3. Create Book Object
                 setStatus(`Adding ${fileName} to library...`);
                 const newBook: Book = {
                     hash,
-                    title: metadata.title,
-                    author: metadata.creator,
-                    coverUrl: coverUrl,
+                    title: metadata.title || fileName || "Unknown Title",
+                    author: metadata.creator || "Unknown Author",
+                    coverUrl: metadata.cover_base64,
                     path,
                     addedAt: Date.now(),
                 };

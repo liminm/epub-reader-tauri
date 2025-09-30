@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ePub, { Book as EpubBook, Rendition } from "epubjs";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { Book } from "../types";
 
@@ -21,14 +22,15 @@ export function Reader({ book, onBack }: ReaderProps) {
         const loadBook = async () => {
             try {
                 console.log("Loading book:", book.path);
-                const fileBytes = await readFile(book.path);
-                if (!active) return;
-
-                const bookData = fileBytes.buffer;
-                console.log("File read, size:", bookData.byteLength);
+                // Use asset protocol to load file efficiently
+                const url = convertFileSrc(book.path);
+                console.log("Book URL:", url);
 
                 // Initialize book with ArrayBuffer
-                const epub = ePub(bookData);
+                // We revert to readFile because asset:// protocol has CORS issues in dev mode
+                // and epub.js XHR implementation doesn't handle it well.
+                const fileBytes = await readFile(book.path);
+                const epub = ePub(fileBytes.buffer);
                 bookRef.current = epub;
 
                 await epub.ready;

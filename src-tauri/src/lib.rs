@@ -7,6 +7,9 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+use epub::doc::EpubDoc;
+use base64::{engine::general_purpose, Engine as _};
+
 #[tauri::command]
 fn calculate_book_hash(file_path: String) -> Result<String, String> {
     let mut file = File::open(&file_path).map_err(|e| e.to_string())?;
@@ -23,13 +26,41 @@ fn calculate_book_hash(file_path: String) -> Result<String, String> {
     Ok(format!("{:x}", digest))
 }
 
+#[derive(serde::Serialize)]
+struct EpubMetadata {
+    title: Option<String>,
+    creator: Option<String>,
+    cover_base64: Option<String>,
+}
+
+#[tauri::command]
+fn parse_epub_metadata(file_path: String) -> Result<EpubMetadata, String> {
+    let mut doc = EpubDoc::new(&file_path).map_err(|e| e.to_string())?;
+    
+    // mdata returns Option<String> in some versions, but error suggests Option<&MetadataItem>
+    // We convert to string to be safe.
+    let title = doc.mdata("title").map(|s| s.value.to_string());
+    let creator = doc.mdata("creator").map(|s| s.value.to_string());
+    
+    let cover_base64 = doc.get_cover().map(|(data, mime)| {
+        let base64 = general_purpose::STANDARD.encode(data);
+        format!("data:{};base64,{}", mime, base64)
+    });
+
+    Ok(EpubMetadata {
+        title,
+        creator,
+        cover_base64,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, calculate_book_hash])
+        .invoke_handler(tauri::generate_handler![greet, calculate_book_hash, parse_epub_metadata])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
