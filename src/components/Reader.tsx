@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ePub, { Book as EpubBook, Rendition } from "epubjs";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { readFile } from "@tauri-apps/plugin-fs";
+// import { convertFileSrc } from "@tauri-apps/api/core";
+// import { readFile } from "@tauri-apps/plugin-fs";
 import { Book } from "../types";
 
 interface ReaderProps {
@@ -23,14 +23,15 @@ export function Reader({ book, onBack }: ReaderProps) {
             try {
                 console.log("Loading book:", book.path);
                 // Use asset protocol to load file efficiently
-                const url = convertFileSrc(book.path);
+                // Use custom protocol 'epubstream' which supports CORS headers
+                // We construct the URL manually.
+                // Note: On Linux/macOS, path starts with /, so we append it to the protocol + host.
+                // e.g. epubstream://localhost/home/user/book.epub
+                const url = `epubstream://localhost${book.path}`;
                 console.log("Book URL:", url);
 
-                // Initialize book with ArrayBuffer
-                // We revert to readFile because asset:// protocol has CORS issues in dev mode
-                // and epub.js XHR implementation doesn't handle it well.
-                const fileBytes = await readFile(book.path);
-                const epub = ePub(fileBytes.buffer);
+                // Initialize book with URL and explicit encoding
+                const epub = ePub(url, { openAs: "epub" });
                 bookRef.current = epub;
 
                 await epub.ready;

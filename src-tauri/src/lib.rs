@@ -57,6 +57,31 @@ fn parse_epub_metadata(file_path: String) -> Result<EpubMetadata, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("epubstream", |_app, request| {
+            let path = request.uri().path();
+            let path = urlencoding::decode(path).unwrap_or(std::borrow::Cow::Borrowed(path));
+            let path = path.to_string();
+            
+            // On Linux, the path from the URI might be something like "/home/user/..."
+            // We need to ensure it's treated as an absolute path.
+            let file_path = std::path::PathBuf::from(&path);
+
+            if !file_path.exists() {
+                return tauri::http::Response::builder()
+                    .status(404)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(Vec::new())
+                    .unwrap();
+            }
+
+            let content = std::fs::read(&file_path).unwrap_or_default();
+            
+            tauri::http::Response::builder()
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Content-Type", "application/epub+zip")
+                .body(content)
+                .unwrap()
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
