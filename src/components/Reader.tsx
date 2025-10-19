@@ -26,12 +26,14 @@ export function Reader({ book, onBack }: ReaderProps) {
                 // Use custom protocol 'epubstream' which supports CORS headers
                 // We construct the URL manually.
                 // Note: On Linux/macOS, path starts with /, so we append it to the protocol + host.
-                // e.g. epubstream://localhost/home/user/book.epub
-                const url = `epubstream://localhost${book.path}`;
+                // e.g. epubstream://localhost/home/user/book.epub_unpacked/
+                // IMPORTANT: We append "_unpacked/" to the URL to ensure epub.js treats it as a directory
+                // and not a binary file (hiding the .epub extension from the end of the URL).
+                const url = `epubstream://localhost${book.path}_unpacked/`;
                 console.log("Book URL:", url);
 
-                // Initialize book with URL and explicit encoding
-                const epub = ePub(url, { openAs: "epub" });
+                // Initialize book with URL.
+                const epub = ePub(url);
                 bookRef.current = epub;
 
                 await epub.ready;

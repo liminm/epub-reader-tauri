@@ -58,15 +58,55 @@ fn parse_epub_metadata(file_path: String) -> Result<EpubMetadata, String> {
 pub fn run() {
     tauri::Builder::default()
         .register_uri_scheme_protocol("epubstream", |_app, request| {
-            let path = request.uri().path();
-            let path = urlencoding::decode(path).unwrap_or(std::borrow::Cow::Borrowed(path));
-            let path = path.to_string();
+            let uri_path = request.uri().path();
+            let decoded_path = urlencoding::decode(uri_path).unwrap_or(std::borrow::Cow::Borrowed(uri_path));
+            let full_path = decoded_path.to_string();
             
-            // On Linux, the path from the URI might be something like "/home/user/..."
-            // We need to ensure it's treated as an absolute path.
-            let file_path = std::path::PathBuf::from(&path);
+            println!("epubstream request: {}", full_path);
+
+            // Split into file path and internal zip path
+            // We look for ".epub" to find the split point
+            let split_index = full_path.rfind(".epub");
+            
+            if split_index.is_none() {
+                 println!("Error: No .epub extension found in path");
+                 return tauri::http::Response::builder()
+                    .status(404)
+                    .body(Vec::new())
+                    .unwrap();
+            }
+
+            let split_idx = split_index.unwrap() + 5; // +5 for ".epub"
+            let file_path_str = &full_path[..split_idx];
+            let internal_path = if split_idx < full_path.len() {
+                &full_path[split_idx..]
+            } else {
+                ""
+            };
+
+            // Remove leading slash from internal path if present (zip doesn't use them)
+            // Also remove "_unpacked" suffix if present (used to trick epub.js)
+            let internal_path = internal_path.strip_prefix('/').unwrap_or(internal_path);
+            let internal_path = internal_path.strip_prefix("_unpacked").unwrap_or(internal_path);
+            let internal_path = internal_path.strip_prefix('/').unwrap_or(internal_path);
+            
+            println!("File path: {}", file_path_str);
+            println!("Internal path: {}", internal_path);
+
+            // If internal path is empty, it means the client is requesting the root directory.
+            // Return 200 OK to signal existence.
+            if internal_path.is_empty() {
+                 return tauri::http::Response::builder()
+                    .status(200)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(Vec::new())
+                    .unwrap();
+            }
+
+            let file_path = std::path::PathBuf::from(file_path_str);
 
             if !file_path.exists() {
+                println!("Error: File not found at {}", file_path_str);
                 return tauri::http::Response::builder()
                     .status(404)
                     .header("Access-Control-Allow-Origin", "*")
@@ -74,11 +114,32 @@ pub fn run() {
                     .unwrap();
             }
 
-            let content = std::fs::read(&file_path).unwrap_or_default();
+            let file = std::fs::File::open(&file_path).unwrap();
+            let mut archive = zip::ZipArchive::new(file).unwrap();
+
+            // If internal path is empty or just slash, we might want to return something else,
+            // but usually epub.js asks for specific files.
             
+            let mut zip_file = match archive.by_name(internal_path) {
+                Ok(file) => file,
+                Err(e) => {
+                     println!("Error: Could not find {} in zip: {:?}", internal_path, e);
+                     return tauri::http::Response::builder()
+                        .status(404)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(Vec::new())
+                        .unwrap();
+                }
+            };
+
+            let mut content = Vec::new();
+            std::io::Read::read_to_end(&mut zip_file, &mut content).unwrap();
+
+            let mime_type = mime_guess::from_path(internal_path).first_or_octet_stream();
+
             tauri::http::Response::builder()
                 .header("Access-Control-Allow-Origin", "*")
-                .header("Content-Type", "application/epub+zip")
+                .header("Content-Type", mime_type.as_ref())
                 .body(content)
                 .unwrap()
         })
