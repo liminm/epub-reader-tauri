@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-appepub-reader-tauri",
+  "productName": "OmniRead",
   "version": "0.1.0",
   "identifier": "com.omniread.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-appepub-reader-tauri",
+        "title": "OmniRead",
         "width": 800,
         "height": 600
       }

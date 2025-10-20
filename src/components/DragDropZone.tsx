@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 // import ePub from "epubjs";
 // import { readFile } from "@tauri-apps/plugin-fs";
 import { Book } from "../types";
@@ -94,6 +95,32 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
         // This handles browser-internal drops, but for OS drops we rely on tauri://drag-drop
     };
 
+    const handleBrowse = async () => {
+        try {
+            const selected = await open({
+                multiple: true,
+                filters: [{
+                    name: 'ePub',
+                    extensions: ['epub']
+                }]
+            });
+
+            if (selected) {
+                // selected can be string (single) or string[] (multiple) or null
+                const paths = Array.isArray(selected) ? selected : [selected];
+                // Check if paths contains null (though type definition says string | string[] | null)
+                // If user cancels, selected is null.
+                const validPaths = paths.filter((p): p is string => typeof p === 'string');
+                if (validPaths.length > 0) {
+                    handleFiles(validPaths);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to open file dialog:", err);
+            setError("Failed to open file picker");
+        }
+    };
+
     return (
         <div
             className={`relative group border-2 border-dashed rounded-xl p-3 transition-all duration-300 ease-in-out cursor-pointer
@@ -105,6 +132,7 @@ export function DragDropZone({ onBookAdded }: DragDropZoneProps) {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onClick={handleBrowse}
         >
             <div className="flex items-center justify-center space-x-3 pointer-events-none min-h-[40px]">
                 {status ? (
