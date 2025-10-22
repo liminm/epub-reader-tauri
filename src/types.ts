@@ -5,7 +5,8 @@ export interface Book {
     cover?: string;
     coverUrl?: string;
     lastRead?: string;
-    progress?: number;
+    lastLocation?: string; // CFI string
+    progress?: number; // 0-100 percentage
     hash: string;
     addedAt?: number;
 }

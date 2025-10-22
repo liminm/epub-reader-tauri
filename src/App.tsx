@@ -29,6 +29,16 @@ function App() {
     });
   };
 
+  const handleUpdateBook = (updatedBook: Book) => {
+    setBooks((prevBooks) => {
+      const newBooks = prevBooks.map((b) =>
+        b.hash === updatedBook.hash ? updatedBook : b
+      );
+      storage.saveBooks(newBooks);
+      return newBooks;
+    });
+  };
+
   const clearLibrary = async () => {
     await storage.clearBooks();
     setBooks([]);
@@ -39,7 +49,7 @@ function App() {
     <div className="h-screen w-screen bg-gray-900 text-white overflow-hidden flex flex-col">
       {currentBook ? (
         <ErrorBoundary>
-          <Reader book={currentBook} onBack={() => setCurrentBook(null)} />
+          <Reader book={currentBook} onBack={() => setCurrentBook(null)} onUpdateBook={handleUpdateBook} />
         </ErrorBoundary>
       ) : (
         <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full p-6 md:p-8 overflow-hidden">

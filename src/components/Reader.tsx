@@ -7,9 +7,10 @@ import { Book } from "../types";
 interface ReaderProps {
     book: Book;
     onBack: () => void;
+    onUpdateBook: (book: Book) => void;
 }
 
-export function Reader({ book, onBack }: ReaderProps) {
+export function Reader({ book, onBack, onUpdateBook }: ReaderProps) {
     const viewerRef = useRef<HTMLDivElement>(null);
     const bookRef = useRef<EpubBook | null>(null);
     const renditionRef = useRef<Rendition | null>(null);
@@ -20,6 +21,19 @@ export function Reader({ book, onBack }: ReaderProps) {
 
     const [viewMode, setViewMode] = useState<"scrolled" | "single" | "double">("scrolled");
 
+    // Theme State
+    const [fontSize, setFontSize] = useState(() => parseInt(localStorage.getItem("reader_fontSize") || "100"));
+    const [fontFamily, setFontFamily] = useState(() => localStorage.getItem("reader_fontFamily") || "Helvetica, sans-serif");
+    const [theme, setTheme] = useState<"light" | "dark" | "sepia">(() => (localStorage.getItem("reader_theme") as any) || "light");
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    // Persist settings
+    useEffect(() => {
+        localStorage.setItem("reader_fontSize", fontSize.toString());
+        localStorage.setItem("reader_fontFamily", fontFamily);
+        localStorage.setItem("reader_theme", theme);
+    }, [fontSize, fontFamily, theme]);
+
     // 1. Initialize Book
     useEffect(() => {
         if (!book) return;
@@ -27,17 +41,7 @@ export function Reader({ book, onBack }: ReaderProps) {
         let active = true;
         const loadBook = async () => {
             try {
-                console.log("Loading book:", book.path);
-                // Use custom protocol 'epubstream' which supports CORS headers
-                // We construct the URL manually.
-                // Note: On Linux/macOS, path starts with /, so we append it to the protocol + host.
-                // e.g. epubstream://localhost/home/user/book.epub_unpacked/
-                // IMPORTANT: We append "_unpacked/" to the URL to ensure epub.js treats it as a directory
-                // and not a binary file (hiding the .epub extension from the end of the URL).
                 const url = `epubstream://localhost${book.path}_unpacked/`;
-                console.log("Book URL:", url);
-
-                // Initialize book with URL.
                 const epub = ePub(url);
                 bookRef.current = epub;
 
@@ -71,7 +75,7 @@ export function Reader({ book, onBack }: ReaderProps) {
         if (!isReady || !bookRef.current || !viewerRef.current) return;
 
         const epub = bookRef.current;
-        let currentLocation: any = null;
+        let currentLocation: any = book.lastLocation || null;
 
         // Save current location if we are re-rendering
         if (renditionRef.current) {
@@ -109,19 +113,30 @@ export function Reader({ book, onBack }: ReaderProps) {
 
         // Add keyboard listeners to the rendition (iframe)
         rendition.on("keydown", (e: any) => {
-            if (e.key === "ArrowRight") rendition.next();
-            if (e.key === "ArrowLeft") rendition.prev();
-        });
-
-        // Apply theme
-        rendition.themes.default({
-            "body": {
-                "color": "#000 !important",
-                "background": "#fff !important",
-                "font-size": "16px !important",
-                "padding": viewMode === "scrolled" ? "20px 10% !important" : "0 !important",
+            console.log("Rendition keydown:", e.key);
+            if (e.key === "ArrowRight") {
+                console.log("Calling next() from rendition listener");
+                rendition.next();
+            }
+            if (e.key === "ArrowLeft") {
+                console.log("Calling prev() from rendition listener");
+                rendition.prev();
             }
         });
+
+        // Track relocation
+        rendition.on("relocated", (location: any) => {
+            // Update book state
+            onUpdateBook({
+                ...book,
+                lastLocation: location.start.cfi,
+            });
+        });
+
+        // Focus the viewer to ensure keyboard events are captured
+        if (viewerRef.current) {
+            viewerRef.current.focus();
+        }
 
         return () => {
             if (renditionRef.current) {
@@ -131,11 +146,43 @@ export function Reader({ book, onBack }: ReaderProps) {
         };
     }, [isReady, viewMode]);
 
+    // 3. Apply Theme Settings
+    useEffect(() => {
+        if (!renditionRef.current) return;
+
+        const rendition = renditionRef.current;
+
+        // Register themes
+        rendition.themes.register("light", { body: { color: "#000", background: "#fff" } });
+        rendition.themes.register("dark", { body: { color: "#fff", background: "#111" } });
+        rendition.themes.register("sepia", { body: { color: "#5f4b32", background: "#f6f1d1" } });
+
+        // Apply settings
+        rendition.themes.select(theme);
+        rendition.themes.fontSize(`${fontSize}%`);
+        rendition.themes.font(fontFamily);
+
+        // Apply layout specific styles
+        rendition.themes.default({
+            "body": {
+                "padding": viewMode === "scrolled" ? "20px 10% !important" : "0 !important",
+            }
+        });
+
+    }, [theme, fontSize, fontFamily, viewMode, isReady]);
+
     // Global keyboard listener for the main window
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "ArrowLeft") renditionRef.current?.prev();
-            if (e.key === "ArrowRight") renditionRef.current?.next();
+            console.log("Global keydown:", e.key);
+            if (e.key === "ArrowLeft") {
+                console.log("Calling prev() from global listener");
+                renditionRef.current?.prev();
+            }
+            if (e.key === "ArrowRight") {
+                console.log("Calling next() from global listener");
+                renditionRef.current?.next();
+            }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
@@ -200,10 +247,20 @@ export function Reader({ book, onBack }: ReaderProps) {
                     </button>
                     <button
                         onClick={toggleViewMode}
-                        style={{ color: "#d1d5db", marginRight: "16px", display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer" }}
+                        style={{ color: "#d1d5db", marginRight: "12px", display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer" }}
                         title={`View Mode: ${viewMode}`}
                     >
                         {getViewModeIcon()}
+                    </button>
+                    <button
+                        onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                        style={{ color: "#d1d5db", marginRight: "16px", display: "flex", alignItems: "center", background: "none", border: "none", cursor: "pointer" }}
+                        title="Settings"
+                    >
+                        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
                     </button>
                     <span style={{ color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "300px", fontWeight: 500 }}>{book.title}</span>
                 </div>
@@ -251,6 +308,40 @@ export function Reader({ book, onBack }: ReaderProps) {
                     </div>
                 )}
 
+                {/* Settings Panel */}
+                {isSettingsOpen && (
+                    <div style={{ position: "absolute", top: "10px", right: "10px", width: "250px", background: "#1f2937", border: "1px solid #374151", borderRadius: "8px", padding: "16px", zIndex: 50, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+                        <div style={{ marginBottom: "16px" }}>
+                            <div style={{ color: "#9ca3af", fontSize: "12px", marginBottom: "8px", fontWeight: "bold", textTransform: "uppercase" }}>Theme</div>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                                <button onClick={() => setTheme("light")} style={{ flex: 1, height: "32px", background: "#fff", border: theme === "light" ? "2px solid #3b82f6" : "1px solid #374151", borderRadius: "4px" }} title="Light"></button>
+                                <button onClick={() => setTheme("dark")} style={{ flex: 1, height: "32px", background: "#111", border: theme === "dark" ? "2px solid #3b82f6" : "1px solid #374151", borderRadius: "4px" }} title="Dark"></button>
+                                <button onClick={() => setTheme("sepia")} style={{ flex: 1, height: "32px", background: "#f6f1d1", border: theme === "sepia" ? "2px solid #3b82f6" : "1px solid #374151", borderRadius: "4px" }} title="Sepia"></button>
+                            </div>
+                        </div>
+                        <div style={{ marginBottom: "16px" }}>
+                            <div style={{ color: "#9ca3af", fontSize: "12px", marginBottom: "8px", fontWeight: "bold", textTransform: "uppercase" }}>Font Size</div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#d1d5db" }}>
+                                <button onClick={() => setFontSize(Math.max(50, fontSize - 10))} style={{ width: "32px", height: "32px", background: "#374151", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" }}>-</button>
+                                <span>{fontSize}%</span>
+                                <button onClick={() => setFontSize(Math.min(200, fontSize + 10))} style={{ width: "32px", height: "32px", background: "#374151", border: "none", borderRadius: "4px", color: "white", cursor: "pointer" }}>+</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div style={{ color: "#9ca3af", fontSize: "12px", marginBottom: "8px", fontWeight: "bold", textTransform: "uppercase" }}>Font Family</div>
+                            <select
+                                value={fontFamily}
+                                onChange={(e) => setFontFamily(e.target.value)}
+                                style={{ width: "100%", padding: "8px", background: "#374151", color: "white", border: "none", borderRadius: "4px", outline: "none" }}
+                            >
+                                <option value="Helvetica, sans-serif">Sans-serif</option>
+                                <option value="Georgia, serif">Serif</option>
+                                <option value="Courier New, monospace">Monospace</option>
+                            </select>
+                        </div>
+                    </div>
+                )}
+
                 {/* Main Viewer Area */}
                 <div style={{ flex: 1, position: "relative", background: "white", overflow: "hidden" }}>
                     {error && <div style={{ color: "#ef4444", padding: "16px", position: "absolute", zIndex: 40, background: "rgba(255,255,255,0.9)", width: "100%", textAlign: "center", borderBottom: "1px solid #fecaca" }}>{error}</div>}
@@ -274,7 +365,11 @@ export function Reader({ book, onBack }: ReaderProps) {
                     />
 
                     {/* Viewer - Absolute to fill the flex-1 container */}
-                    <div ref={viewerRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%" }} />
+                    <div
+                        ref={viewerRef}
+                        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%", outline: "none" }}
+                        tabIndex={-1}
+                    />
                 </div>
             </div>
         </div>
